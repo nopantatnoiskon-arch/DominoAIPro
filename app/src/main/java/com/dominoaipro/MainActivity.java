@@ -1,4 +1,4 @@
-package com.dominoaipro;
+ package com.dominoaipro;
 
 import android.app.Activity;
 import android.content.BroadcastReceiver;
@@ -14,6 +14,7 @@ import android.graphics.Color;
 import android.view.View;
 import android.widget.*;
 import android.content.SharedPreferences;
+
 import java.util.*;
 
 public class MainActivity extends Activity {
@@ -24,12 +25,18 @@ public class MainActivity extends Activity {
     TextView resultText, statsText, captureStatus;
     ImageView previewImage;
     SharedPreferences prefs;
+
     private boolean receiverRegistered = false;
 
     private final BroadcastReceiver frameReceiver =
             new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
+
+            if (intent == null) {
+                return;
+            }
+
             String path = intent.getStringExtra(
                     ScreenCaptureService.EXTRA_PATH);
 
@@ -38,8 +45,12 @@ public class MainActivity extends Activity {
 
                 if (frame != null) {
                     previewImage.setImageBitmap(frame);
+
                     captureStatus.setText(
                             DominoVision.inspect(frame));
+                } else {
+                    captureStatus.setText(
+                            "Gambar diterima, tetapi gagal dibuka.");
                 }
             }
         }
@@ -53,10 +64,12 @@ public class MainActivity extends Activity {
                 "DominoStats", MODE_PRIVATE);
 
         ScrollView scroll = new ScrollView(this);
+
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setPadding(24, 24, 24, 24);
         layout.setBackgroundColor(Color.rgb(20, 28, 38));
+
         scroll.addView(layout);
 
         TextView title = new TextView(this);
@@ -99,30 +112,42 @@ public class MainActivity extends Activity {
                     getSystemService(
                             Context.MEDIA_PROJECTION_SERVICE);
 
-            startActivityForResult(
-                    manager.createScreenCaptureIntent(),
-                    REQUEST_CAPTURE);
+            if (manager != null) {
+                startActivityForResult(
+                        manager.createScreenCaptureIntent(),
+                        REQUEST_CAPTURE);
+            } else {
+                captureStatus.setText(
+                        "Layanan tangkapan layar tidak tersedia.");
+            }
         });
 
         stopCapture.setOnClickListener(v -> {
             Intent stop = new Intent(
                     this, ScreenCaptureService.class);
+
             stop.setAction(
                     ScreenCaptureService.ACTION_STOP);
+
             startService(stop);
+
             captureStatus.setText(
                     "Pembacaan layar dihentikan.");
+
             previewImage.setImageDrawable(null);
         });
 
         addLabel(layout, "Kartu di tangan");
+
         handInput = addInput(
                 layout, "Contoh: 6-6, 6-3, 2-5");
 
         addLabel(layout, "Angka ujung kiri meja");
+
         leftInput = addInput(layout, "Contoh: 6");
 
         addLabel(layout, "Angka ujung kanan meja");
+
         rightInput = addInput(layout, "Contoh: 3");
 
         Button analyze = new Button(this);
@@ -171,23 +196,32 @@ public class MainActivity extends Activity {
                 .setPositiveButton("Reset", (d, w) -> {
                     prefs.edit().clear().apply();
                     updateStats();
-                }).show()
+                })
+                .show()
         );
 
         updateStats();
+
         setContentView(scroll);
     }
 
-    @Override
-    protected void onResume() {
-        super.onResume();
+    /*
+     * Mendaftarkan penerima siaran gambar.
+     * Pemeriksaan boolean mencegah pendaftaran ganda.
+     */
+    private void registerFrameReceiver() {
+
+        if (receiverRegistered) {
+            return;
+        }
 
         IntentFilter filter = new IntentFilter(
                 ScreenCaptureService.ACTION_FRAME);
 
         if (Build.VERSION.SDK_INT >= 33) {
             registerReceiver(
-                    frameReceiver, filter,
+                    frameReceiver,
+                    filter,
                     Context.RECEIVER_NOT_EXPORTED);
         } else {
             registerReceiver(frameReceiver, filter);
@@ -197,25 +231,51 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+
+        registerFrameReceiver();
+    }
+
+    /*
+     * Jangan melepas receiver di onPause().
+     * HGI dapat dibuka tanpa langsung memutus
+     * penerimaan siaran gambar.
+     */
+    @Override
     protected void onPause() {
+        super.onPause();
+    }
+
+    /*
+     * Receiver baru dilepas saat Activity dihancurkan.
+     */
+    @Override
+    protected void onDestroy() {
+
         if (receiverRegistered) {
             try {
                 unregisterReceiver(frameReceiver);
-            } catch (Exception ignored) {
+            } catch (IllegalArgumentException ignored) {
             }
+
             receiverRegistered = false;
         }
-        super.onPause();
+
+        super.onDestroy();
     }
 
     @Override
     protected void onActivityResult(
             int requestCode, int resultCode, Intent data) {
+
         super.onActivityResult(
                 requestCode, resultCode, data);
 
         if (requestCode == REQUEST_CAPTURE) {
+
             if (resultCode == RESULT_OK && data != null) {
+
                 Intent start = new Intent(
                         this, ScreenCaptureService.class);
 
@@ -238,6 +298,7 @@ public class MainActivity extends Activity {
 
                 captureStatus.setText(
                         "Izin diberikan. Menunggu gambar layar...");
+
             } else {
                 captureStatus.setText(
                         "Izin tangkapan layar tidak diberikan.");
@@ -246,27 +307,33 @@ public class MainActivity extends Activity {
     }
 
     void addLabel(LinearLayout layout, String text) {
+
         TextView label = new TextView(this);
         label.setText(text);
         label.setTextColor(Color.rgb(210, 235, 70));
         label.setTextSize(16);
         label.setPadding(0, 20, 0, 8);
+
         layout.addView(label);
     }
 
     EditText addInput(
             LinearLayout layout, String hint) {
+
         EditText input = new EditText(this);
         input.setSingleLine(true);
         input.setHint(hint);
         input.setHintTextColor(Color.GRAY);
         input.setTextColor(Color.WHITE);
         input.setTextSize(16);
+
         layout.addView(input);
+
         return input;
     }
 
     void analyzeMoves() {
+
         try {
             String hand = handInput.getText()
                     .toString().trim();
@@ -279,6 +346,7 @@ public class MainActivity extends Activity {
 
             if (left < 0 || left > 6 ||
                     right < 0 || right > 6) {
+
                 throw new IllegalArgumentException(
                         "Angka ujung meja harus 0 sampai 6.");
             }
@@ -289,11 +357,14 @@ public class MainActivity extends Activity {
             }
 
             String[] tiles = hand.split(",");
+
             List<String> playable = new ArrayList<>();
+
             String bestMove = "";
             int bestScore = Integer.MIN_VALUE;
 
             for (String raw : tiles) {
+
                 String tile = raw.trim();
                 String[] parts = tile.split("-");
 
@@ -304,24 +375,35 @@ public class MainActivity extends Activity {
 
                 int a = Integer.parseInt(
                         parts[0].trim());
+
                 int b = Integer.parseInt(
                         parts[1].trim());
 
                 if (a < 0 || a > 6 ||
                         b < 0 || b > 6) {
+
                     throw new IllegalArgumentException(
                             "Angka kartu harus 0 sampai 6.");
                 }
 
                 if (a == left || b == left ||
                         a == right || b == right) {
+
                     playable.add(tile);
 
                     int score = (a + b) * 10;
 
-                    if (a == b) score += 8;
-                    if (a == left || b == left) score += 2;
-                    if (a == right || b == right) score += 2;
+                    if (a == b) {
+                        score += 8;
+                    }
+
+                    if (a == left || b == left) {
+                        score += 2;
+                    }
+
+                    if (a == right || b == right) {
+                        score += 2;
+                    }
 
                     if (score > bestScore) {
                         bestScore = score;
@@ -334,15 +416,19 @@ public class MainActivity extends Activity {
                     new StringBuilder("HASIL ANALISIS\n\n");
 
             if (playable.isEmpty()) {
+
                 output.append(
                         "Tidak ada kartu yang cocok dengan kedua ujung meja.");
+
             } else {
+
                 output.append(
                         "Kartu yang bisa dimainkan:\n");
 
                 for (String tile : playable) {
                     output.append("• ")
-                            .append(tile).append("\n");
+                            .append(tile)
+                            .append("\n");
                 }
 
                 output.append("\nREKOMENDASI:\nMainkan kartu ")
@@ -355,22 +441,30 @@ public class MainActivity extends Activity {
             resultText.setText(output.toString());
 
         } catch (Exception e) {
+
             resultText.setText(
                     "Periksa input kamu.\n" + e.getMessage());
         }
     }
 
     void recordResult(boolean win) {
+
         String key = win ? "wins" : "losses";
+
         int value = prefs.getInt(key, 0);
 
-        prefs.edit().putInt(key, value + 1).apply();
+        prefs.edit()
+                .putInt(key, value + 1)
+                .apply();
+
         updateStats();
     }
 
     void updateStats() {
+
         int wins = prefs.getInt("wins", 0);
         int losses = prefs.getInt("losses", 0);
+
         int total = wins + losses;
 
         double rate = total == 0
@@ -384,4 +478,4 @@ public class MainActivity extends Activity {
                 + String.format(
                         Locale.US, "%.1f%%", rate));
     }
-                }
+} 
